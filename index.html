@@ -138,8 +138,8 @@
                     }
                 });
 
-                // 【縦の重なり絶対防止】展開された最終的な「行数」に基づいて、1行あたり38pxを動的に割り当て
-                const dynamicHeight = Math.max(400, finalLabels.length * 38);
+                // 【縦の重なり絶対防止】展開された最終的な「行数」に基づいて、1行あたり40pxを動的に割り当て
+                const dynamicHeight = Math.max(400, finalLabels.length * 40);
                 document.getElementById('ccuChart').style.height = dynamicHeight + 'px';
                 chartContainer.style.height = dynamicHeight + 'px';
             } else {
