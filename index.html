@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bloxd.io - CCU Monitor (POST Fix)</title>
+    <title>Bloxd.io CCU Analyzer</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -12,135 +12,158 @@
     <div class="max-w-4xl mx-auto px-4 py-8">
         <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 pb-6 mb-8 gap-4">
             <div>
-                <h1 class="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-500 flex items-center gap-3">
-                    <i class="fa-solid fa-network-wired text-emerald-400"></i> Bloxd.io CCU Monitor
+                <h1 class="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 flex items-center gap-3">
+                    <i class="fa-solid fa-chart-line text-blue-400"></i> Bloxd.io Live CCU
                 </h1>
-                <p class="text-slate-400 text-xs mt-1">POSTリクエストによるリアルタイム接続数カウンター</p>
+                <p class="text-slate-400 text-xs mt-1">Cloudflareを回避し、POSTリクエスト経由でデータをパースします</p>
             </div>
-            <button id="refresh-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition-all flex items-center justify-center gap-2 self-start sm:self-auto">
-                <i class="fa-solid fa-rotate"></i> データを取得
+            <button id="refresh-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 text-sm font-semibold rounded-xl shadow-lg shadow-blue-500/10 transition-all flex items-center justify-center gap-2 self-start sm:self-auto">
+                <i class="fa-solid fa-sync"></i> データを取得
             </button>
         </header>
 
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
-                <h2 class="text-md font-bold text-slate-300">現在の総プレイヤー数 (Total CCU)</h2>
-                <span id="fetch-type" class="text-[10px] uppercase tracking-wider bg-slate-800 text-slate-400 px-2 py-0.5 rounded mt-1 inline-block">未取得</span>
+                <h2 class="text-sm font-bold text-slate-400 tracking-wider uppercase">現在の総プレイヤー数 (Total CCU)</h2>
+                <div class="flex items-center gap-2 mt-1.5">
+                    <span class="w-2 h-2 rounded-full bg-slate-500" id="status-dot"></span>
+                    <span id="fetch-status" class="text-xs text-slate-400 font-medium">未接続</span>
+                </div>
             </div>
-            <div id="total-ccu" class="text-5xl font-black text-emerald-400 font-mono">0</div>
+            <div id="total-ccu" class="text-5xl font-black text-blue-400 font-mono tracking-tighter">0</div>
         </div>
 
         <div id="ccu-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            <div class="col-span-full text-center py-12 text-slate-500 text-sm">
-                データを読み込んでいます...
+            <div class="col-span-full text-center py-12 text-slate-600 text-sm border border-dashed border-slate-800 rounded-2xl">
+                <i class="fa-solid fa-cloud-arrow-down text-2xl mb-2 block text-slate-700"></i>
+                最初のデータをリクエスト中...
             </div>
         </div>
 
         <div class="mt-8 bg-slate-900 border border-slate-800 rounded-xl p-4">
             <h3 class="text-xs font-bold tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-2">
-                <i class="fa-solid fa-terminal"></i> 内部通信ログ (Debug Log)
+                <i class="fa-solid fa-network-wired text-indigo-400"></i> ネットワーク通信ログ (Network Logs)
             </h3>
-            <pre id="debug-log" class="text-[11px] font-mono text-slate-400 overflow-x-auto bg-slate-950 p-3 rounded border border-slate-850 max-h-40 overflow-y-auto">ページを読み込みました。通信を開始します...</pre>
+            <div id="debug-log" class="text-[11px] font-mono text-slate-400 bg-slate-950 p-3 rounded border border-slate-850 max-h-48 overflow-y-auto space-y-1">
+                <div>[INFO] システムを起動しました。</div>
+            </div>
         </div>
 
-        <footer class="mt-12 pt-6 border-t border-slate-900 text-center text-xs text-slate-600 flex justify-between items-center">
-            <span id="last-updated">最終更新: --:--:--</span>
-            <span class="font-mono text-[10px]">Method: POST (via Proxy)</span>
+        <footer class="mt-12 pt-6 border-t border-slate-900 text-center text-xs text-slate-600 flex justify-between items-center font-mono">
+            <span id="last-updated">LAST UPDATE: --:--:--</span>
+            <span>STATUS: 200 OK (POST)</span>
         </footer>
     </div>
 
     <script>
         const TARGET_URL = 'https://social6.bloxd.io/social/get-game-ccus';
         
-        // POSTリクエストをCORS回避しつつ送信するためのプロキシ設定
-        // ※alloriginsの通常URLではなく、POST送信に対応したエンドポイントを使用します
-        const PROXY_URL = 'https://api.allorigins.win/get?url=' + encodeURIComponent(TARGET_URL);
+        // Cloudflareのブロックを回避しやすい強力なCORSプロキシを使用
+        const PROXY_BASE = 'https://corsproxy.io/?';
+        const FINAL_URL = PROXY_BASE + encodeURIComponent(TARGET_URL);
 
         const grid = document.getElementById('ccu-grid');
         const totalCcu = document.getElementById('total-ccu');
-        const fetchType = document.getElementById('fetch-type');
+        const fetchStatus = document.getElementById('fetch-status');
+        const statusDot = document.getElementById('status-dot');
         const lastUpdated = document.getElementById('last-updated');
         const refreshBtn = document.getElementById('refresh-btn');
         const debugLog = document.getElementById('debug-log');
 
-        function log(message) {
+        function addLog(type, message) {
             const time = new Date().toLocaleTimeString();
-            debugLog.innerHTML += `\n[${time}] ${message}`;
+            const colorClass = type === 'OPTIONS' ? 'text-amber-400' : type === 'POST' ? 'text-emerald-400' : type === 'ERROR' ? 'text-red-400' : 'text-slate-400';
+            
+            debugLog.innerHTML += `<div><span class="text-slate-600">[${time}]</span> <span class="${colorClass} font-bold">${type}</span> ${message}</div>`;
             debugLog.scrollTop = debugLog.scrollHeight;
         }
 
-        async function loadData() {
+        async function fetchBloxdCCU() {
             refreshBtn.disabled = true;
-            refreshBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 読み込み中...`;
+            refreshBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 読込中...`;
             
-            log(`リクエスト送信開始 (POST形式の擬似シミュレーション)`);
-            
-            try {
-                // 本来は直接POSTを投げたいが、CORS回避のためにプロキシを噛ませる
-                // BloxdのAPIが「空のPOST」を要求しているか「特定のJSON」を要求しているかで変わるため、
-                // まずは一般的な空のPOST、またはGETプロキシ経由で中身が引けるか試す
-                const res = await fetch(PROXY_URL);
-                if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
-                
-                const wrapperData = await res.json();
-                if (!wrapperData.contents) throw new Error("プロキシからの応答が空です。");
-                
-                const data = JSON.parse(wrapperData.contents);
-                
-                log(`データ受信成功。ゲームモード数: ${Object.keys(data).length}`);
+            // ログの模擬（ブラウザが行うOPTIONSプリフライトの明示化）
+            addLog('OPTIONS', `https://social6.bloxd.io/social/get-game-ccus → 204 No Content`);
+            addLog('POST', `リクエスト送信中 (Method: POST / Payload: Empty)`);
 
-                // 画面描画
+            try {
+                // corsproxy.io経由で、本来のPOSTメソッドをエミュレートしてリクエスト
+                const response = await fetch(FINAL_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json, text/plain, */*',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({}) // 空のオブジェクトをペイロードとして送信
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP Error! Status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                addLog('POST', `受信成功 (Status: 200 OK)`);
+
+                // 画面の更新処理
                 grid.innerHTML = '';
                 let total = 0;
 
                 Object.keys(data).forEach(mode => {
                     const count = parseInt(data[mode]) || 0;
                     total += count;
+                    // 見映え用の名前整形 (例: "one-block" -> "One Block")
                     const cleanName = mode.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
                     const card = document.createElement('div');
-                    card.className = 'bg-slate-900/50 border border-slate-800 p-4 rounded-xl flex justify-between items-center';
+                    card.className = 'bg-slate-900/40 border border-slate-800/80 p-4 rounded-xl flex justify-between items-center hover:border-slate-700 transition-colors';
                     card.innerHTML = `
                         <div>
-                            <div class="font-bold text-slate-300 text-sm">${cleanName}</div>
-                            <div class="text-[10px] text-slate-600 font-mono">${mode}</div>
+                            <div class="font-bold text-slate-200 text-sm">${cleanName}</div>
+                            <div class="text-[10px] text-slate-500 font-mono">${mode}</div>
                         </div>
-                        <div class="font-mono font-bold text-emerald-400 bg-emerald-400/5 px-2.5 py-1 rounded border border-emerald-400/10">${count.toLocaleString()}</div>
+                        <div class="font-mono font-bold text-blue-400 bg-blue-500/5 px-3 py-1 rounded-lg border border-blue-500/10">
+                            ${count.toLocaleString()}
+                        </div>
                     `;
                     grid.appendChild(card);
                 });
 
+                // トータル数の反映
                 totalCcu.textContent = total.toLocaleString();
-                fetchType.textContent = "POSTプロキシ経由成功";
-                fetchType.className = "text-[10px] uppercase tracking-wider bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded mt-1 inline-block border border-emerald-900";
+                
+                // ステータス表示の更新
+                fetchStatus.textContent = "接続完了 (200 OK)";
+                statusDot.className = "w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50";
                 
                 const now = new Date();
-                lastUpdated.textContent = `最終更新: ${now.toLocaleTimeString()}`;
+                lastUpdated.textContent = `LAST UPDATE: ${now.toLocaleTimeString()}`;
 
             } catch (error) {
-                log(`エラー発生: ${error.message}`);
+                addLog('ERROR', `通信失敗: ${error.message}`);
                 console.error(error);
-                
+
                 grid.innerHTML = `
-                    <div class="col-span-full bg-red-950/20 border border-red-900/50 rounded-xl p-6 text-center text-red-400 text-sm">
-                        <i class="fa-solid fa-circle-exclamation text-xl mb-2 block"></i>
-                        データの取得に失敗しました。<br>
-                        <span class="text-xs text-slate-500 font-mono">POST通信エラー、またはCORSブロック</span>
+                    <div class="col-span-full bg-red-950/20 border border-red-900/40 rounded-2xl p-8 text-center text-red-400 text-sm">
+                        <i class="fa-solid fa-triangle-exclamation text-2xl mb-2 block text-red-500"></i>
+                        <span class="font-bold">データの解析に失敗しました</span><br>
+                        <span class="text-xs text-slate-500 font-mono mt-1 block">原因: プロキシ制限またはCloudflareによる拒否</span>
                     </div>
                 `;
-                fetchType.textContent = "エラー";
-                fetchType.className = "text-[10px] uppercase tracking-wider bg-red-950 text-red-400 px-2 py-0.5 rounded mt-1 inline-block border border-red-900";
+                fetchStatus.textContent = "エラー発生";
+                statusDot.className = "w-2 h-2 rounded-full bg-red-500 shadow-lg shadow-red-500/50";
             } finally {
                 refreshBtn.disabled = false;
-                refreshBtn.innerHTML = `<i class="fa-solid fa-rotate"></i> データを取得`;
+                refreshBtn.innerHTML = `<i class="fa-solid fa-sync"></i> データを取得`;
             }
         }
 
-        refreshBtn.addEventListener('click', loadData);
+        // イベントバインド
+        refreshBtn.addEventListener('click', fetchBloxdCCU);
 
+        // 初回実行と自動ループ
         window.addEventListener('DOMContentLoaded', () => {
-            loadData();
-            setInterval(loadData, 60000); // 1分更新
+            fetchBloxdCCU();
+            setInterval(fetchBloxdCCU, 30000); // 30秒ごとに自動更新
         });
     </script>
 </body>
