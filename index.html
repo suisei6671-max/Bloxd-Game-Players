@@ -17,7 +17,7 @@
                 <h1 class="text-3xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 flex items-center gap-4">
                     <i class="fa-solid fa-chart-pie text-amber-400"></i> Bloxd.io Live CCU Visualizer
                 </h1>
-                <p class="text-slate-400 text-sm mt-2 font-medium">1,000人を超えたプレイヤー数を自動で下の行に折り返す特殊グラフです</p>
+                <p class="text-slate-400 text-sm mt-2 font-medium">1000人スタック型グラフ（ホバーで合計表示）＆ PNGダウンロード対応版</p>
             </div>
             <button id="refresh-btn" class="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3.5 text-sm font-bold rounded-xl shadow-xl shadow-amber-500/10 transition-all flex items-center justify-center gap-3 self-start sm:self-auto cursor-pointer">
                 <i class="fa-solid fa-sync"></i> データを更新
@@ -43,21 +43,28 @@
         </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 mb-12 shadow-2xl">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
                 <h3 class="text-base font-bold text-slate-200 flex items-center gap-3">
-                    <i class="fa-solid fa-chart-bar text-orange-400"></i> モード別接続人数グラフ (1,000人折り返し型)
+                    <i class="fa-solid fa-chart-bar text-orange-400"></i> モード別接続人数 (1,000人区切りスタック)
                 </h3>
-                <div class="inline-flex rounded-xl p-1 bg-slate-950 border border-slate-800 self-start sm:self-auto">
-                    <button id="btn-bar" class="px-5 py-2 text-xs font-bold rounded-lg transition-all bg-amber-600 text-white flex items-center gap-2 cursor-pointer">
-                        <i class="fa-solid fa-chart-bar"></i> 折り返し横棒
+                
+                <div class="flex flex-wrap items-center gap-4">
+                    <button id="download-btn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-file-image text-emerald-400"></i> PNGで保存
                     </button>
-                    <button id="btn-pie" class="px-5 py-2 text-xs font-bold rounded-lg transition-all text-slate-400 hover:text-slate-200 flex items-center gap-2 cursor-pointer">
-                        <i class="fa-solid fa-chart-pie"></i> 円グラフ
-                    </button>
+
+                    <div class="inline-flex rounded-xl p-1 bg-slate-950 border border-slate-800">
+                        <button id="btn-bar" class="px-5 py-2 text-xs font-bold rounded-lg transition-all bg-amber-600 text-white flex items-center gap-2 cursor-pointer">
+                            <i class="fa-solid fa-chart-bar"></i> 横棒スタック
+                        </button>
+                        <button id="btn-pie" class="px-5 py-2 text-xs font-bold rounded-lg transition-all text-slate-400 hover:text-slate-200 flex items-center gap-2 cursor-pointer">
+                            <i class="fa-solid fa-chart-pie"></i> 円グラフ
+                        </button>
+                    </div>
                 </div>
             </div>
             
-            <div class="relative w-full h-[1400px]">
+            <div class="relative w-full h-[650px] bg-slate-900 rounded-xl p-2">
                 <canvas id="ccuChart"></canvas>
             </div>
         </div>
@@ -79,12 +86,13 @@
         const statusDot = document.getElementById('status-dot');
         const lastUpdated = document.getElementById('last-updated');
         const refreshBtn = document.getElementById('refresh-btn');
+        const downloadBtn = document.getElementById('download-btn');
         const btnBar = document.getElementById('btn-bar');
         const btnPie = document.getElementById('btn-pie');
         
         let ccuChart = null; 
         let currentChartType = 'bar'; 
-        let rawSortedData = []; // ソート済みの元データ保持用
+        let rawSortedData = []; 
 
         const chartColors = [
             '#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', 
@@ -92,97 +100,89 @@
             '#64748b', '#e2e8f0', '#f97316', '#22c55e', '#a1a1aa'
         ];
 
-        // グラフの描画・更新ロジック
+        // グラフの描画・更新
         function updateChart() {
             const ctx = document.getElementById('ccuChart').getContext('2d');
             if (ccuChart) ccuChart.destroy();
 
             const isBar = currentChartType === 'bar';
 
-            let finalLabels = [];
-            let finalDataValues = [];
+            let labels = rawSortedData.map(item => item.cleanName);
+            let datasets = [];
 
             if (isBar) {
-                // 【超重要】1000人ごとにデータを分解して下に折り返すカスタムロジック
-                rawSortedData.forEach(item => {
-                    let rem = item.count;
-                    let chunkIndex = 0;
+                // 最大の人数に合わせて何ブロック（何スタック）必要か計算
+                const maxCount = rawSortedData.length > 0 ? rawSortedData[0].count : 0;
+                const maxChunks = Math.max(1, Math.ceil(maxCount / 1000));
 
-                    if (rem === 0) {
-                        finalLabels.push(item.cleanName);
-                        finalDataValues.push(0);
-                        return;
-                    }
+                // 1000人ごとのデータレイヤー（Dataset）を生成
+                for (let i = 0; i < maxChunks; i++) {
+                    let chunkData = rawSortedData.map(item => {
+                        let start = i * 1000;
+                        if (item.count <= start) return 0;
+                        return Math.min(item.count - start, 1000);
+                    });
 
-                    while (rem > 0) {
-                        let currentChunk = Math.min(rem, 1000);
-                        
-                        // 1行目は元の名前、折り返した2行目以降は「空白文字」を入れて縦に並べる
-                        // (空白の数が同じだとChart.jsが同じラベルと誤認するため、インデックスに応じたスペースを付与)
-                        let labelName = chunkIndex === 0 ? item.cleanName : " ".repeat(chunkIndex);
-                        
-                        finalLabels.push(labelName);
-                        finalDataValues.push(currentChunk);
-                        
-                        rem -= currentChunk;
-                        chunkIndex++;
-                    }
-                });
+                    datasets.push({
+                        label: `${i * 1000 + 1}～${(i + 1) * 1000}人目`,
+                        data: chunkData,
+                        // グラデーション風に見せるため、ブロックごとに透明度を変更
+                        backgroundColor: `rgba(245, 158, 11, ${0.4 - (i * 0.12)})`, 
+                        borderColor: 'rgba(245, 158, 11, 1)',
+                        borderWidth: 1,
+                        stack: 'ccu' // これで同じ行に積み上がる
+                    });
+                }
             } else {
-                // 円グラフの時は折り返さず、そのままの合算値を使用
-                finalLabels = rawSortedData.map(item => item.cleanName);
-                finalDataValues = rawSortedData.map(item => item.count);
+                // 円グラフ
+                datasets.push({
+                    data: rawSortedData.map(item => item.count),
+                    backgroundColor: chartColors,
+                    borderColor: '#0f172a',
+                    borderWidth: 2
+                });
             }
 
             ccuChart = new Chart(ctx, {
                 type: isBar ? 'bar' : 'pie',
                 data: {
-                    labels: finalLabels,
-                    datasets: [{
-                        label: 'プレイヤー数',
-                        data: finalDataValues,
-                        backgroundColor: isBar ? 'rgba(245, 158, 11, 0.25)' : chartColors,
-                        borderColor: isBar ? 'rgba(245, 158, 11, 1)' : '#0f172a',
-                        borderWidth: 2,
-                        borderRadius: isBar ? 4 : 0,
-                        hoverBackgroundColor: isBar ? 'rgba(245, 158, 11, 0.45)' : undefined
-                    }]
+                    labels: labels,
+                    datasets: datasets
                 },
                 options: {
                     indexAxis: isBar ? 'y' : 'x',
                     responsive: true,
                     maintainAspectRatio: false,
                     layout: {
-                        padding: {
-                            left: isBar ? 20 : 0,
-                            right: isBar ? 40 : 0,
-                            top: 20,
-                            bottom: 20
-                        }
+                        padding: { left: isBar ? 10 : 0, right: isBar ? 30 : 0, top: 10, bottom: 10 }
                     },
                     plugins: {
-                        legend: {
-                            display: !isBar, 
-                            position: 'right',
-                            labels: {
-                                color: '#e2e8f0',
-                                font: { size: 12, weight: 'bold' },
-                                boxWidth: 14,
-                                padding: 15
+                        legend: { display: false }, // 上部の凡例は邪魔なので非表示
+                        tooltip: {
+                            // 【超重要】カーソルを合わせたら合計値をドバっと表示するカスタム設定
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label; // ゲームモード名
+                                },
+                                label: function(context) {
+                                    if (isBar) {
+                                        // 全スタックの合計（＝本来の人数）を計算して表示
+                                        const modeIndex = context.dataIndex;
+                                        const totalScore = rawSortedData[modeIndex].count;
+                                        return ` 合計プレイヤー数: ${totalScore.toLocaleString()} 人`;
+                                    } else {
+                                        return ` プレイヤー数: ${context.raw.toLocaleString()} 人`;
+                                    }
+                                }
                             }
                         }
                     },
                     scales: isBar ? {
                         x: {
-                            // 横軸の最大上限をきっちり1000に固定！
                             min: 0,
-                            max: 1000,
-                            grid: { color: 'rgba(51, 65, 85, 0.35)' },
-                            ticks: { 
-                                color: '#94a3b8', 
-                                font: { family: 'monospace', size: 12 },
-                                padding: 10
-                            }
+                            max: 1000, // 横軸の目盛り上限はしっかり1000固定！
+                            grid: { color: 'rgba(51, 65, 85, 0.3)' },
+                            ticks: { color: '#94a3b8', font: { family: 'monospace' } }
                         },
                         y: {
                             grid: { display: false },
@@ -190,9 +190,7 @@
                                 color: '#f1f5f9', 
                                 font: { size: 12, weight: '700' },
                                 autoSkip: false,
-                                maxRotation: 0,
-                                minRotation: 0,
-                                padding: 25
+                                padding: 15
                             }
                         }
                     } : {
@@ -202,6 +200,31 @@
                 }
             });
         }
+
+        // PNGダウンロード機能 (背景を透過させず暗闇サイバーにするためのラッパー付き)
+        downloadBtn.addEventListener('click', () => {
+            if (!ccuChart) return;
+            
+            // 新しい一時的なキャンバスを作って背景色(Slate-900)を塗ることで、文字やバーが綺麗に写るようにする
+            const canvas = document.getElementById('ccuChart');
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // 背景色を塗りつぶし
+            tempCtx.fillStyle = '#0f172a';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+            
+            // 現在のグラフを描画
+            tempCtx.drawImage(canvas, 0, 0);
+            
+            // ダウンロード用リンクを作って発火
+            const a = document.createElement('a');
+            a.href = tempCanvas.toDataURL('image/png');
+            a.download = `Bloxd_CCU_Graph_${new Date().toISOString().slice(0,10)}.png`;
+            a.click();
+        });
 
         window.handleBloxdData = function(data) {
             const oldScript = document.getElementById('jsonp-script');
@@ -216,7 +239,6 @@
                 grid.innerHTML = '';
                 let total = 0;
 
-                // データを整形して降順ソート
                 rawSortedData = Object.keys(data).map(mode => ({
                     rawName: mode,
                     cleanName: mode.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
@@ -226,7 +248,6 @@
                 rawSortedData.forEach(item => {
                     total += item.count;
 
-                    // 下部の実数カードUI
                     const card = document.createElement('div');
                     card.className = 'bg-slate-900/40 border border-slate-800/80 p-5 rounded-2xl flex justify-between items-center hover:border-slate-700 transition-all gap-4 shadow-lg';
                     card.innerHTML = `
@@ -242,8 +263,6 @@
                 });
 
                 totalCcu.textContent = total.toLocaleString();
-                
-                // グラフを更新
                 updateChart();
 
                 fetchStatus.textContent = "ライブデータ同期中";
@@ -282,11 +301,6 @@
             const script = document.createElement('script');
             script.id = 'jsonp-script';
             script.src = `${GAS_URL}?callback=handleBloxdData&_=${new Date().getTime()}`;
-            
-            script.onerror = function() {
-                showError("スクリプトの読み込みに失敗しました。");
-            };
-
             document.body.appendChild(script);
         }
 
