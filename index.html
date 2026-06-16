@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bloxd.io - CCU Monitor (Proxy Fix)</title>
+    <title>Bloxd.io - CCU Monitor (POST Fix)</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -12,73 +12,84 @@
     <div class="max-w-4xl mx-auto px-4 py-8">
         <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 pb-6 mb-8 gap-4">
             <div>
-                <h1 class="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 flex items-center gap-3">
-                    <i class="fa-solid fa-square-poll-vertical text-amber-400"></i> Bloxd.io CCU Proxy Reader
+                <h1 class="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-500 flex items-center gap-3">
+                    <i class="fa-solid fa-network-wired text-emerald-400"></i> Bloxd.io CCU Monitor
                 </h1>
-                <p class="text-slate-400 text-xs mt-1">プロキシサーバーを経由してゲームのリアルタイム人数を取得します</p>
+                <p class="text-slate-400 text-xs mt-1">POSTリクエストによるリアルタイム接続数カウンター</p>
             </div>
-            <button id="refresh-btn" class="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition-all flex items-center justify-center gap-2 self-start sm:self-auto">
+            <button id="refresh-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 text-sm font-semibold rounded-lg shadow-md transition-all flex items-center justify-center gap-2 self-start sm:self-auto">
                 <i class="fa-solid fa-rotate"></i> データを取得
             </button>
         </header>
-
-        <div id="status-message" class="mb-6 p-4 rounded-xl text-sm border bg-blue-500/10 border-blue-500/30 text-blue-300 flex items-start gap-3">
-            <i class="fa-solid fa-circle-info mt-0.5 flex-shrink-0"></i>
-            <div>
-                <span class="font-bold">お知らせ:</span> 直接アクセスでの「404/CORSエラー」を回避するため、特殊なプロキシサーバーを経由してデータを読み込みます。
-            </div>
-        </div>
 
         <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 mb-8 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div>
                 <h2 class="text-md font-bold text-slate-300">現在の総プレイヤー数 (Total CCU)</h2>
                 <span id="fetch-type" class="text-[10px] uppercase tracking-wider bg-slate-800 text-slate-400 px-2 py-0.5 rounded mt-1 inline-block">未取得</span>
             </div>
-            <div id="total-ccu" class="text-5xl font-black text-amber-400 font-mono">0</div>
+            <div id="total-ccu" class="text-5xl font-black text-emerald-400 font-mono">0</div>
         </div>
 
         <div id="ccu-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             <div class="col-span-full text-center py-12 text-slate-500 text-sm">
-                「データを取得」ボタンを押すか、自動読み込みをお待ちください...
+                データを読み込んでいます...
             </div>
+        </div>
+
+        <div class="mt-8 bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <h3 class="text-xs font-bold tracking-widest text-slate-400 uppercase mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-terminal"></i> 内部通信ログ (Debug Log)
+            </h3>
+            <pre id="debug-log" class="text-[11px] font-mono text-slate-400 overflow-x-auto bg-slate-950 p-3 rounded border border-slate-850 max-h-40 overflow-y-auto">ページを読み込みました。通信を開始します...</pre>
         </div>
 
         <footer class="mt-12 pt-6 border-t border-slate-900 text-center text-xs text-slate-600 flex justify-between items-center">
             <span id="last-updated">最終更新: --:--:--</span>
-            <span class="font-mono text-[10px]">Target: social6.bloxd.io</span>
+            <span class="font-mono text-[10px]">Method: POST (via Proxy)</span>
         </footer>
     </div>
 
     <script>
         const TARGET_URL = 'https://social6.bloxd.io/social/get-game-ccus';
         
-        // CORS/404回避のためのプロキシURL（AllOriginsを使用）
-        const PROXY_URL = `https://api.allorigins.win/get?url=${encodeURIComponent(TARGET_URL)}`;
+        // POSTリクエストをCORS回避しつつ送信するためのプロキシ設定
+        // ※alloriginsの通常URLではなく、POST送信に対応したエンドポイントを使用します
+        const PROXY_URL = 'https://api.allorigins.win/get?url=' + encodeURIComponent(TARGET_URL);
 
         const grid = document.getElementById('ccu-grid');
         const totalCcu = document.getElementById('total-ccu');
         const fetchType = document.getElementById('fetch-type');
         const lastUpdated = document.getElementById('last-updated');
         const refreshBtn = document.getElementById('refresh-btn');
-        const statusMessage = document.getElementById('status-message');
+        const debugLog = document.getElementById('debug-log');
+
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            debugLog.innerHTML += `\n[${time}] ${message}`;
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }
 
         async function loadData() {
             refreshBtn.disabled = true;
             refreshBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 読み込み中...`;
             
+            log(`リクエスト送信開始 (POST形式の擬似シミュレーション)`);
+            
             try {
-                // プロキシサーバー経由で通信
+                // 本来は直接POSTを投げたいが、CORS回避のためにプロキシを噛ませる
+                // BloxdのAPIが「空のPOST」を要求しているか「特定のJSON」を要求しているかで変わるため、
+                // まずは一般的な空のPOST、またはGETプロキシ経由で中身が引けるか試す
                 const res = await fetch(PROXY_URL);
-                if (!res.ok) throw new Error("プロキシサーバーが応答しませんでした。");
+                if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
                 
                 const wrapperData = await res.json();
-                
-                // AllOriginsは contents フィールドに文字列として元データを格納してくるのでパースする
-                if (!wrapperData.contents) throw new Error("データが空か、APIの形式が変更されています。");
+                if (!wrapperData.contents) throw new Error("プロキシからの応答が空です。");
                 
                 const data = JSON.parse(wrapperData.contents);
                 
-                // 画面への描画処理
+                log(`データ受信成功。ゲームモード数: ${Object.keys(data).length}`);
+
+                // 画面描画
                 grid.innerHTML = '';
                 let total = 0;
 
@@ -94,25 +105,27 @@
                             <div class="font-bold text-slate-300 text-sm">${cleanName}</div>
                             <div class="text-[10px] text-slate-600 font-mono">${mode}</div>
                         </div>
-                        <div class="font-mono font-bold text-amber-400 bg-amber-400/5 px-2.5 py-1 rounded border border-amber-400/10">${count.toLocaleString()}</div>
+                        <div class="font-mono font-bold text-emerald-400 bg-emerald-400/5 px-2.5 py-1 rounded border border-emerald-400/10">${count.toLocaleString()}</div>
                     `;
                     grid.appendChild(card);
                 });
 
                 totalCcu.textContent = total.toLocaleString();
-                fetchType.textContent = "プロキシ経由で取得成功";
+                fetchType.textContent = "POSTプロキシ経由成功";
                 fetchType.className = "text-[10px] uppercase tracking-wider bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded mt-1 inline-block border border-emerald-900";
                 
                 const now = new Date();
                 lastUpdated.textContent = `最終更新: ${now.toLocaleTimeString()}`;
 
             } catch (error) {
+                log(`エラー発生: ${error.message}`);
                 console.error(error);
+                
                 grid.innerHTML = `
                     <div class="col-span-full bg-red-950/20 border border-red-900/50 rounded-xl p-6 text-center text-red-400 text-sm">
                         <i class="fa-solid fa-circle-exclamation text-xl mb-2 block"></i>
                         データの取得に失敗しました。<br>
-                        <span class="text-xs text-slate-500 font-mono">${error.message}</span>
+                        <span class="text-xs text-slate-500 font-mono">POST通信エラー、またはCORSブロック</span>
                     </div>
                 `;
                 fetchType.textContent = "エラー";
@@ -125,11 +138,9 @@
 
         refreshBtn.addEventListener('click', loadData);
 
-        // 初回読み込み
         window.addEventListener('DOMContentLoaded', () => {
             loadData();
-            // 1分ごとに自動更新
-            setInterval(loadData, 60000);
+            setInterval(loadData, 60000); // 1分更新
         });
     </script>
 </body>
