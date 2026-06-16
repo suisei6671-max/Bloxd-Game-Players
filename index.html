@@ -17,7 +17,7 @@
                 <h1 class="text-3xl font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 flex items-center gap-4">
                     <i class="fa-solid fa-chart-pie text-amber-400"></i> Bloxd.io Live CCU Visualizer
                 </h1>
-                <p class="text-slate-400 text-sm mt-2 font-medium">1,000人折り返し・ホバー合計表示・縦余白自動調整・PNG保存対応</p>
+                <p class="text-slate-400 text-sm mt-2 font-medium">縦の余白を極限まで拡張。文字被りを完全に排除した安全設計版です</p>
             </div>
             <button id="refresh-btn" class="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3.5 text-sm font-bold rounded-xl shadow-xl shadow-amber-500/10 transition-all flex items-center justify-center gap-3 self-start sm:self-auto cursor-pointer">
                 <i class="fa-solid fa-sync"></i> データを更新
@@ -64,7 +64,7 @@
                 </div>
             </div>
             
-            <div id="chart-container" class="relative w-full overflow-y-auto bg-slate-900/60 rounded-xl p-2 max-h-[800px]">
+            <div id="chart-container" class="relative w-full overflow-y-auto bg-slate-900/60 rounded-xl p-4 max-h-[1200px]">
                 <canvas id="ccuChart"></canvas>
             </div>
         </div>
@@ -109,7 +109,7 @@
 
             let finalLabels = [];
             let finalDataValues = [];
-            let originalTotals = []; // 【新規】各行に対応する「分解前の本来の合計人数」を記録する配列
+            let originalTotals = []; 
 
             if (isBar) {
                 // 1000人ごとの折り返しデータ生成
@@ -126,20 +126,19 @@
 
                     while (rem > 0) {
                         let currentChunk = Math.min(rem, 1000);
-                        // 1行目はゲーム名、折り返し2行目以降は一見空白（Chart.jsで重複エラーにならないようスペース数を変更）
                         let labelName = chunkIndex === 0 ? item.cleanName : " ".repeat(chunkIndex);
                         
                         finalLabels.push(labelName);
                         finalDataValues.push(currentChunk);
-                        originalTotals.push(item.count); // ★ここに対応する元の合算値を保存
+                        originalTotals.push(item.count); 
                         
                         rem -= currentChunk;
                         chunkIndex++;
                     }
                 });
 
-                // 【縦の重なり絶対防止】展開された最終的な「行数」に基づいて、1行あたり40pxを動的に割り当て
-                const dynamicHeight = Math.max(400, finalLabels.length * 40);
+                // ★【超広々設計】1行あたり「55px」を動的に確保。絶対に被りません
+                const dynamicHeight = Math.max(500, finalLabels.length * 55);
                 document.getElementById('ccuChart').style.height = dynamicHeight + 'px';
                 chartContainer.style.height = dynamicHeight + 'px';
             } else {
@@ -148,8 +147,8 @@
                 finalDataValues = rawSortedData.map(item => item.count);
                 originalTotals = [...finalDataValues];
                 
-                document.getElementById('ccuChart').style.height = '500px';
-                chartContainer.style.height = '500px';
+                document.getElementById('ccuChart').style.height = '600px';
+                chartContainer.style.height = '600px';
             }
 
             ccuChart = new Chart(ctx, {
@@ -171,7 +170,7 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     layout: {
-                        padding: { left: isBar ? 20 : 0, right: isBar ? 40 : 0, top: 10, bottom: 10 }
+                        padding: { left: isBar ? 20 : 0, right: isBar ? 40 : 0, top: 20, bottom: 20 }
                     },
                     plugins: {
                         legend: {
@@ -181,7 +180,6 @@
                         },
                         tooltip: {
                             callbacks: {
-                                // 【復活＆修正】カーソルを合わせた時、1000ではなく元データの合計値を表示
                                 label: function(context) {
                                     const totalScore = originalTotals[context.dataIndex];
                                     return ` 合計プレイヤー数: ${totalScore.toLocaleString()} 人`;
@@ -192,7 +190,7 @@
                     scales: isBar ? {
                         x: {
                             min: 0,
-                            max: 1000, // 横軸の上限は1000固定
+                            max: 1000, 
                             grid: { color: 'rgba(51, 65, 85, 0.35)' },
                             ticks: { color: '#94a3b8', font: { family: 'monospace', size: 12 }, padding: 10 }
                         },
@@ -200,7 +198,8 @@
                             grid: { display: false },
                             ticks: { 
                                 color: '#f1f5f9', 
-                                font: { size: 12, weight: '700' },
+                                // ★フォントサイズを12から11にして安全圏を拡大
+                                font: { size: 11, weight: '700' },
                                 autoSkip: false,
                                 maxRotation: 0,
                                 minRotation: 0,
